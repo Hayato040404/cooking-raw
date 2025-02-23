@@ -127,8 +127,8 @@
         <p>3. 包丁で切る: 食材に近づける</p>
         <p>4. 焼く/加熱: フライパン、コンロ、電子レンジに置く</p>
         <p>5. 洗う: シンクに置く</p>
-        <p>6. 盛り付け: 調理台や皿に置く</p>
-        <p>7. "Serve"でお客に出す（レシピで高評価！）</p>
+        <p>6. 盛り付け: 調理台や皿に置く（自由に組み合わせ！）</p>
+        <p>7. "Serve"でお客に出す（レシピで高評価、変な料理もOK）</p>
         <p><b>モード:</b></p>
         <p>Normal: エフェクトとサウンドあり</p>
         <p>Lite: エフェクトとサウンドなし（軽量）</p>
@@ -171,10 +171,9 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
-    <script src="https://unpkg.com/three@0.134.0/examples/js/loaders/GLTFLoader.js"></script>
     <script>
         let gameStarted = false;
-        let isNormalMode = true; // 軽量化モードのフラグ
+        let isNormalMode = true;
         const scene = new THREE.Scene();
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
@@ -222,52 +221,61 @@
         let plateContents = [];
 
         const blockTypes = {
-            carrot: { model: null, size: [1, 0.5, 0.5], name: "ニンジン", color: 0xFFA500 },
-            tomato: { model: null, size: [0.8, 0.8, 0.8], name: "トマト", color: 0xFF0000 },
-            meat: { model: null, size: [1, 0.3, 1], name: "肉", color: 0x8B4513 },
-            potato: { model: null, size: [0.7, 0.7, 0.7], name: "ジャガイモ", color: 0xD2B48C },
-            onion: { model: null, size: [0.9, 0.9, 0.6], name: "タマネギ", color: 0xF5F5DC },
-            fish: { model: null, size: [1.2, 0.4, 0.6], name: "魚", color: 0x4682B4 },
-            cheese: { model: null, size: [0.8, 0.2, 0.8], name: "チーズ", color: 0xFFFF00 },
-            bread: { model: null, size: [1, 0.4, 0.6], name: "パン", color: 0xDAA520 },
-            egg: { model: null, size: [0.5, 0.6, 0.5], name: "卵", color: 0xFFFACD },
-            butter: { model: null, size: [0.4, 0.2, 0.4], name: "バター", color: 0xFFD700 },
-            salt: { model: null, size: [0.3, 0.3, 0.3], name: "塩", color: 0xFFFFFF },
-            detergent: { model: null, size: [0.6, 0.8, 0.6], name: "洗剤", color: 0x00FFFF },
-            rice: { model: null, size: [0.7, 0.3, 0.7], name: "米", color: 0xF8F8FF },
-            tofu: { model: null, size: [0.6, 0.6, 0.6], name: "豆腐", color: 0xF0EDE5 },
-            pasta: { model: null, size: [1, 0.2, 0.4], name: "パスタ", color: 0xF5DEB3 },
-            milk: { model: null, size: [0.5, 1, 0.5], name: "牛乳", color: 0xFFFFFF },
-            sugar: { model: null, size: [0.4, 0.4, 0.4], name: "砂糖", color: 0xFFF8DC },
-            oil: { model: null, size: [0.6, 0.8, 0.6], name: "油", color: 0xFFD700 },
-            knife: { model: null, size: [0.2, 0.1, 1], name: "包丁", color: 0xCCCCCC },
-            pan: { model: null, size: [2, 0.2, 2], name: "フライパン", color: 0x666666 },
-            stove: { model: null, size: [2, 0.5, 2], name: "コンロ", color: 0x333333 },
-            microwave: { model: null, size: [1.5, 1, 1.5], name: "電子レンジ", color: 0xAAAAAA },
-            sink: { model: null, size: [2, 0.5, 1], name: "シンク", color: 0xB0C4DE },
-            counter: { model: null, size: [3, 0.5, 1.5], name: "調理台", color: 0x8B5A2B },
-            plate: { model: null, size: [1.5, 0.1, 1.5], name: "皿", color: 0xFFFFFF }
+            carrot: { size: [1, 0.5, 0.5], name: "ニンジン", color: 0xFFA500 },
+            tomato: { size: [0.8, 0.8, 0.8], name: "トマト", emoji: "🍅" }, // 絵文字適用
+            meat: { size: [1, 0.3, 1], name: "肉", color: 0x8B4513 },
+            potato: { size: [0.7, 0.7, 0.7], name: "ジャガイモ", color: 0xD2B48C },
+            onion: { size: [0.9, 0.9, 0.6], name: "タマネギ", color: 0xF5F5DC },
+            fish: { size: [1.2, 0.4, 0.6], name: "魚", color: 0x4682B4 },
+            cheese: { size: [0.8, 0.2, 0.8], name: "チーズ", color: 0xFFFF00 },
+            bread: { size: [1, 0.4, 0.6], name: "パン", color: 0xDAA520 },
+            egg: { size: [0.5, 0.6, 0.5], name: "卵", color: 0xFFFACD },
+            butter: { size: [0.4, 0.2, 0.4], name: "バター", color: 0xFFD700 },
+            salt: { size: [0.3, 0.3, 0.3], name: "塩", color: 0xFFFFFF },
+            detergent: { size: [0.6, 0.8, 0.6], name: "洗剤", color: 0x00FFFF },
+            rice: { size: [0.7, 0.3, 0.7], name: "米", color: 0xF8F8FF },
+            tofu: { size: [0.6, 0.6, 0.6], name: "豆腐", color: 0xF0EDE5 },
+            pasta: { size: [1, 0.2, 0.4], name: "パスタ", color: 0xF5DEB3 },
+            milk: { size: [0.5, 1, 0.5], name: "牛乳", color: 0xFFFFFF },
+            sugar: { size: [0.4, 0.4, 0.4], name: "砂糖", color: 0xFFF8DC },
+            oil: { size: [0.6, 0.8, 0.6], name: "油", color: 0xFFD700 },
+            knife: { size: [0.2, 0.1, 1], name: "包丁", color: 0xCCCCCC },
+            pan: { size: [2, 0.2, 2], name: "フライパン", color: 0x666666 },
+            stove: { size: [2, 0.5, 2], name: "コンロ", color: 0x333333 },
+            microwave: { size: [1.5, 1, 1.5], name: "電子レンジ", color: 0xAAAAAA },
+            sink: { size: [2, 0.5, 1], name: "シンク", color: 0xB0C4DE },
+            counter: { size: [3, 0.5, 1.5], name: "調理台", color: 0x8B5A2B },
+            plate: { size: [1.5, 0.1, 1.5], name: "皿", color: 0xFFFFFF }
         };
+        
 
-        const loader = new THREE.GLTFLoader();
         function addObject(x, y, z, type, mass = 1) {
-            const { model, size, name, color } = blockTypes[type];
+            const { size, name, color, emoji } = blockTypes[type];
             let mesh;
-            if (model) {
-                loader.load(model, (gltf) => {
-                    mesh = gltf.scene;
-                    mesh.scale.set(0.1, 0.1, 0.1);
-                    mesh.position.set(x, y, z);
-                    scene.add(mesh);
-                }, undefined, (error) => console.error(error));
+
+            if (emoji) {
+                // 絵文字を2Dスプライトとして適用
+                const canvas = document.createElement('canvas');
+                canvas.width = 128;
+                canvas.height = 128;
+                const ctx = canvas.getContext('2d');
+                ctx.font = '100px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(emoji, 64, 64);
+                const texture = new THREE.CanvasTexture(canvas);
+                mesh = new THREE.Sprite(
+                    new THREE.SpriteMaterial({ map: texture })
+                );
+                mesh.scale.set(size[0], size[1], 1);
             } else {
                 mesh = new THREE.Mesh(
                     new THREE.BoxGeometry(...size),
                     new THREE.MeshBasicMaterial({ color: color || 0xFFFFFF })
                 );
-                mesh.position.set(x, y, z);
-                scene.add(mesh);
             }
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
 
             const body = new CANNON.Body({ mass });
             body.addShape(new CANNON.Box(new CANNON.Vec3(size[0]/2, size[1]/2, size[2]/2)));
@@ -437,7 +445,10 @@
                 }
             }
 
-            if (dishName === "謎の料理") baseScore = contentsTypes.includes('detergent') ? 1 : 2;
+            if (dishName === "謎の料理") {
+                baseScore = contentsTypes.includes('detergent') ? 1 : Math.min(3, plateContents.length);
+                dishName = contentsTypes.length > 1 ? "奇抜な創作料理" : "シンプルな一品";
+            }
             score = Math.max(1, Math.min(5, Math.floor(baseScore + Math.random() * 2)));
             alert(`料理: ${dishName}\nお客さんの評価: ${score}/5`);
             dish = "None";
@@ -446,11 +457,16 @@
         }
 
         function checkCooking() {
+            if (heldObject && heldObject.type === 'knife') {
+                objects.forEach(obj => {
+                    if (['carrot', 'tomato', 'meat', 'potato', 'onion', 'fish', 'egg'].includes(obj.type) &&
+                        obj.body.position.distanceTo(heldObject.body.position) < 1.5 && obj.state === 'raw') {
+                        sliceObject(obj);
+                    }
+                });
+            }
+
             objects.forEach(obj => {
-                if (heldObject && heldObject.type === 'knife' && ['carrot', 'tomato', 'meat', 'potato', 'onion', 'fish', 'egg'].includes(obj.type) &&
-                    obj.body.position.distanceTo(heldObject.body.position) < 1.5 && obj.state === 'raw') {
-                    sliceObject(obj);
-                }
                 const pan = objects.find(o => o.type === 'pan');
                 const stove = objects.find(o => o.type === 'stove');
                 const microwave = objects.find(o => o.type === 'microwave');
