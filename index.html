@@ -7,7 +7,7 @@
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial; }
         canvas { width: 100%; height: 100%; }
-        #startScreen, #helpScreen, #orderScreen {
+        #startScreen, #helpScreen, #orderScreen, #businessScreen {
             position: absolute;
             top: 0;
             left: 0;
@@ -20,7 +20,7 @@
             justify-content: center;
             align-items: center;
         }
-        #helpScreen, #orderScreen { display: none; }
+        #helpScreen, #orderScreen, #businessScreen { display: none; }
         #orderList {
             max-height: 70vh;
             overflow-y: auto;
@@ -112,8 +112,10 @@
 <body>
     <div id="startScreen">
         <h1>Cooking Simulator Re:make</h1>
-        <button onclick="startGame(true)">Start (Normal Mode)</button>
-        <button onclick="startGame(false)">Start (Lite Mode)</button>
+        <button onclick="startGame(true, 'sandbox')">Sandbox (Normal)</button>
+        <button onclick="startGame(false, 'sandbox')">Sandbox (Lite)</button>
+        <button onclick="startGame(true, 'business')">Business (Normal)</button>
+        <button onclick="startGame(false, 'business')">Business (Lite)</button>
         <button onclick="showHelp()">Help</button>
     </div>
     <div id="helpScreen">
@@ -121,15 +123,17 @@
         <p><b>操作方法:</b></p>
         <p>PC: WASDで移動、マウスドラッグで視点変更、ボタンで操作</p>
         <p>モバイル: ジョイスティックで移動、スワイプで視点変更、ボタンで操作</p>
-        <p><b>調理方法:</b></p>
+        <p><b>調理方法 (共通):</b></p>
         <p>1. "Order"で食材や器具を注文（モバイルはスワイプでスクロール）</p>
         <p>2. "Pick"で手に持つ、"Place"でおく</p>
         <p>3. 包丁で切る: 食材に近づける</p>
         <p>4. 焼く/加熱: フライパン、コンロ、電子レンジに置く</p>
         <p>5. 洗う: シンクに置く</p>
-        <p>6. 盛り付け: 調理台や皿に置く（自由に組み合わせ！）</p>
-        <p>7. "Serve"でお客に出す（レシピで高評価、変な料理もOK）</p>
+        <p>6. 盛り付け: 調理台や皿に置く</p>
+        <p>7. "Serve"でお客に出す</p>
         <p><b>モード:</b></p>
+        <p>Sandbox: 自由に調理（レシピで高評価、変な料理もOK）</p>
+        <p>Business: お客の注文を満たし、お金を稼ぐ（壁のボードを確認、3分以内）</p>
         <p>Normal: エフェクトとサウンドあり</p>
         <p>Lite: エフェクトとサウンドなし（軽量）</p>
         <button onclick="hideHelp()">Back</button>
@@ -158,7 +162,12 @@
         </div>
         <button onclick="hideOrder()">Close</button>
     </div>
-    <div id="info">Dish: None | Score: N/A</div>
+    <div id="businessScreen">
+        <h1>Business Mode</h1>
+        <p>お客さんが注文を出します。壁の注文ボードを確認し、料理を作ってください。</p>
+        <button onclick="startBusiness()">Start</button>
+    </div>
+    <div id="info">Dish: None | Score: N/A | Money: 0</div>
     <div id="targetInfo"></div>
     <div id="controls">
         <button onclick="pickObject()">Pick</button>
@@ -174,6 +183,11 @@
     <script>
         let gameStarted = false;
         let isNormalMode = true;
+        let gameMode = 'sandbox';
+        let money = 0;
+        let currentOrder = null;
+        let orderTimer = null;
+        let orderBoard = null;
         const scene = new THREE.Scene();
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
@@ -214,6 +228,18 @@
         shelf.position.set(0, 3, -9);
         scene.add(shelf);
 
+        const trashGeo = new THREE.BoxGeometry(1, 1, 1);
+        const trashMat = new THREE.MeshBasicMaterial({ color: 0x333333 });
+        const trash = new THREE.Mesh(trashGeo, trashMat);
+        trash.position.set(6, 0.5, -8);
+        scene.add(trash);
+
+        const fridgeGeo = new THREE.BoxGeometry(2, 3, 1);
+        const fridgeMat = new THREE.MeshBasicMaterial({ color: 0xD3D3D3 });
+        const fridge = new THREE.Mesh(fridgeGeo, fridgeMat);
+        fridge.position.set(-6, 1.5, -8);
+        scene.add(fridge);
+
         const objects = [];
         let dish = "None";
         let heldObject = null;
@@ -222,7 +248,7 @@
 
         const blockTypes = {
             carrot: { size: [1, 0.5, 0.5], name: "ニンジン", color: 0xFFA500 },
-            tomato: { size: [0.8, 0.8, 0.8], name: "トマト", emoji: "🍅" }, // 絵文字適用
+            tomato: { size: [0.8, 0.8, 0.8], name: "トマト", color: 0xFF0000 },
             meat: { size: [1, 0.3, 1], name: "肉", color: 0x8B4513 },
             potato: { size: [0.7, 0.7, 0.7], name: "ジャガイモ", color: 0xD2B48C },
             onion: { size: [0.9, 0.9, 0.6], name: "タマネギ", color: 0xF5F5DC },
@@ -247,33 +273,13 @@
             counter: { size: [3, 0.5, 1.5], name: "調理台", color: 0x8B5A2B },
             plate: { size: [1.5, 0.1, 1.5], name: "皿", color: 0xFFFFFF }
         };
-        
 
         function addObject(x, y, z, type, mass = 1) {
-            const { size, name, color, emoji } = blockTypes[type];
-            let mesh;
-
-            if (emoji) {
-                // 絵文字を2Dスプライトとして適用
-                const canvas = document.createElement('canvas');
-                canvas.width = 128;
-                canvas.height = 128;
-                const ctx = canvas.getContext('2d');
-                ctx.font = '100px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(emoji, 64, 64);
-                const texture = new THREE.CanvasTexture(canvas);
-                mesh = new THREE.Sprite(
-                    new THREE.SpriteMaterial({ map: texture })
-                );
-                mesh.scale.set(size[0], size[1], 1);
-            } else {
-                mesh = new THREE.Mesh(
-                    new THREE.BoxGeometry(...size),
-                    new THREE.MeshBasicMaterial({ color: color || 0xFFFFFF })
-                );
-            }
+            const { size, name, color } = blockTypes[type];
+            const mesh = new THREE.Mesh(
+                new THREE.BoxGeometry(...size),
+                new THREE.MeshBasicMaterial({ color: color || 0xFFFFFF })
+            );
             mesh.position.set(x, y, z);
             scene.add(mesh);
 
@@ -315,9 +321,24 @@
             addObject(4, 0.5, -2, 'sink', 0);
             addObject(0, 0.5, -4, 'counter', 0);
             addObject(-4, 0.5, -2, 'plate', 0);
+
+            // 注文ボード（営業モード用）
+            const boardGeo = new THREE.PlaneGeometry(4, 2);
+            const boardCanvas = document.createElement('canvas');
+            boardCanvas.width = 512;
+            boardCanvas.height = 256;
+            const boardCtx = boardCanvas.getContext('2d');
+            boardCtx.fillStyle = 'white';
+            boardCtx.fillRect(0, 0, 512, 256);
+            const boardTexture = new THREE.CanvasTexture(boardCanvas);
+            const boardMat = new THREE.MeshBasicMaterial({ map: boardTexture });
+            orderBoard = new THREE.Mesh(boardGeo, boardMat);
+            orderBoard.position.set(0, 7, -9);
+            orderBoard.rotation.x = -Math.PI / 6;
+            scene.add(orderBoard);
         }
 
-        // パーティクルエフェクト（軽量化モードで無効化可能）
+        // パーティクルエフェクト
         function addParticleEffect(position, color, count) {
             if (!isNormalMode) return;
             const particles = new THREE.Group();
@@ -337,7 +358,7 @@
             setTimeout(() => scene.remove(particles), 500);
         }
 
-        // サウンド（軽量化モードで無効化可能）
+        // サウンド
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const sounds = {
             cut: new Audio('https://www.soundjay.com/buttons/sounds/button-1.mp3'),
@@ -420,16 +441,52 @@
         }
 
         const recipes = {
-            "Fried Rice": ["rice_cooked", "egg_cooked", "salt"],
-            "Spaghetti": ["pasta_cooked", "tomato_cooked", "salt"],
-            "Grilled Fish": ["fish_cooked", "salt"],
-            "Cheese Sandwich": ["bread", "cheese"],
-            "Mashed Potato": ["potato_cooked", "butter"],
-            "Omelette": ["egg_cooked", "salt"],
-            "Tofu Soup": ["tofu_washed", "salt"],
-            "Carrot Cake": ["carrot_cooked", "sugar", "egg"],
-            "Detergent Disaster": ["detergent"]
+            "Fried Rice": { ingredients: ["rice_cooked", "egg_cooked", "salt"], instructions: "米と卵を焼いて、塩を加える" },
+            "Spaghetti": { ingredients: ["pasta_cooked", "tomato_cooked", "salt"], instructions: "パスタとトマトを焼いて、塩を加える" },
+            "Grilled Fish": { ingredients: ["fish_cooked", "salt"], instructions: "魚を焼いて、塩を加える" },
+            "Cheese Sandwich": { ingredients: ["bread", "cheese"], instructions: "パンとチーズを皿に盛る" },
+            "Mashed Potato": { ingredients: ["potato_cooked", "butter"], instructions: "ジャガイモを焼いて、バターを加える" },
+            "Omelette": { ingredients: ["egg_cooked", "salt"], instructions: "卵を焼いて、塩を加える" },
+            "Tofu Soup": { ingredients: ["tofu_washed", "salt"], instructions: "豆腐を洗って、塩を加える" },
+            "Carrot Cake": { ingredients: ["carrot_cooked", "sugar", "egg"], instructions: "ニンジンを焼いて、砂糖と卵を加える" },
+            "Detergent Disaster": { ingredients: ["detergent"], instructions: "洗剤をそのまま皿に盛る" }
         };
+
+        function generateOrder() {
+            const recipeKeys = Object.keys(recipes);
+            const order = recipeKeys[Math.floor(Math.random() * recipeKeys.length)];
+            currentOrder = { name: order, ingredients: recipes[order].ingredients, instructions: recipes[order].instructions };
+            updateOrderBoard();
+            let timeLeft = 180; // 3分（180秒）
+            clearInterval(orderTimer);
+            orderTimer = setInterval(() => {
+                timeLeft--;
+                updateOrderBoard(timeLeft);
+                if (timeLeft <= 0) {
+                    clearInterval(orderTimer);
+                    alert("時間切れ！注文がキャンセルされました。");
+                    currentOrder = null;
+                    orderBoard.material.map.needsUpdate = true;
+                    generateOrder();
+                }
+            }, 1000);
+        }
+
+        function updateOrderBoard(timeLeft = 180) {
+            if (!orderBoard || !currentOrder) return;
+            const canvas = orderBoard.material.map.image;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, 512, 256);
+            ctx.fillStyle = 'black';
+            ctx.font = '40px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`注文: ${currentOrder.name}`, 256, 80);
+            ctx.font = '24px Arial';
+            ctx.fillText(`作り方: ${currentOrder.instructions}`, 256, 140);
+            ctx.fillText(`残り時間: ${Math.floor(timeLeft / 60)}:${(timeLeft % 60).toString().padStart(2, '0')}`, 256, 200);
+            orderBoard.material.map.needsUpdate = true;
+        }
 
         function serveDish() {
             if (plateContents.length === 0) return;
@@ -437,20 +494,32 @@
             let baseScore = 0;
 
             const contentsTypes = plateContents.map(item => item.type + (item.state !== 'raw' ? `_${item.state}` : ''));
-            for (const [name, ingredients] of Object.entries(recipes)) {
-                if (ingredients.every(ing => contentsTypes.includes(ing))) {
-                    dishName = name;
-                    baseScore = 4;
-                    break;
+            if (gameMode === 'sandbox') {
+                for (const [name, recipe] of Object.entries(recipes)) {
+                    if (recipe.ingredients.every(ing => contentsTypes.includes(ing))) {
+                        dishName = name;
+                        baseScore = 4;
+                        break;
+                    }
+                }
+                if (dishName === "謎の料理") {
+                    baseScore = contentsTypes.includes('detergent') ? 1 : Math.min(3, plateContents.length);
+                    dishName = contentsTypes.map(t => blockTypes[t.split('_')[0]].name).join("と") + "の創作料理";
+                }
+                score = Math.max(1, Math.min(5, Math.floor(baseScore + Math.random() * 2)));
+                alert(`料理: ${dishName}\nお客さんの評価: ${score}/5`);
+            } else if (gameMode === 'business' && currentOrder) {
+                if (currentOrder.ingredients.every(ing => contentsTypes.includes(ing))) {
+                    dishName = currentOrder.name;
+                    money += 50;
+                    alert(`注文成功！${dishName}を渡しました。\n報酬: 50円\n現在の所持金: ${money}円`);
+                    clearInterval(orderTimer);
+                    generateOrder();
+                } else {
+                    alert("注文と一致しません！注文ボードを確認してください。");
+                    return;
                 }
             }
-
-            if (dishName === "謎の料理") {
-                baseScore = contentsTypes.includes('detergent') ? 1 : Math.min(3, plateContents.length);
-                dishName = contentsTypes.length > 1 ? "奇抜な創作料理" : "シンプルな一品";
-            }
-            score = Math.max(1, Math.min(5, Math.floor(baseScore + Math.random() * 2)));
-            alert(`料理: ${dishName}\nお客さんの評価: ${score}/5`);
             dish = "None";
             plateContents = [];
             updateInfo();
@@ -499,18 +568,17 @@
                         playSound('wash');
                     }
                 }
-                if ((counter || plate) && obj.body.position.distanceTo((counter || plate).body.position) < 1.5 && !plateContents.includes(obj)) {
+                if (plate && obj.body.position.distanceTo(plate.body.position) < 1.5 && 
+                    !plateContents.includes(obj) && obj.type !== 'plate') {
                     plateContents.push(obj);
-                    if (obj.type !== 'counter' && obj.type !== 'plate') {
-                        dish = "準備中";
-                        updateInfo();
-                    }
+                    dish = "準備中";
+                    updateInfo();
                 }
             });
         }
 
         function updateInfo() {
-            document.getElementById('info').textContent = `Dish: ${dish} | Score: ${score} | Mode: ${isNormalMode ? 'Normal' : 'Lite'}`;
+            document.getElementById('info').textContent = `Dish: ${dish} | Score: ${score} | Money: ${money} | Mode: ${gameMode === 'sandbox' ? 'Sandbox' : 'Business'} (${isNormalMode ? 'Normal' : 'Lite'})`;
         }
 
         document.addEventListener('keydown', (e) => {
@@ -610,14 +678,31 @@
         }
         animate();
 
-        function startGame(normalMode) {
+        function startGame(normalMode, mode) {
             isNormalMode = normalMode;
+            gameMode = mode;
+            if (mode === 'business') {
+                document.getElementById('startScreen').style.display = 'none';
+                document.getElementById('businessScreen').style.display = 'flex';
+            } else {
+                gameStarted = true;
+                document.getElementById('startScreen').style.display = 'none';
+                document.getElementById('controls').style.display = 'block';
+                joystick.style.display = 'block';
+                initScene();
+                if (isNormalMode) sounds.ambient.play();
+                updateInfo();
+            }
+        }
+
+        function startBusiness() {
             gameStarted = true;
-            document.getElementById('startScreen').style.display = 'none';
+            document.getElementById('businessScreen').style.display = 'none';
             document.getElementById('controls').style.display = 'block';
             joystick.style.display = 'block';
             initScene();
             if (isNormalMode) sounds.ambient.play();
+            generateOrder();
             updateInfo();
         }
 
