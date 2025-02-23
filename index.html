@@ -7,7 +7,7 @@
     <style>
         body { margin: 0; overflow: hidden; font-family: Arial; }
         canvas { width: 100%; height: 100%; }
-        #startScreen, #helpScreen, #orderScreen, #businessScreen {
+        #startScreen, #helpScreen, #orderScreen, #businessScreen, #shopScreen {
             position: absolute;
             top: 0;
             left: 0;
@@ -20,8 +20,8 @@
             justify-content: center;
             align-items: center;
         }
-        #helpScreen, #orderScreen, #businessScreen { display: none; }
-        #orderList {
+        #helpScreen, #orderScreen, #businessScreen, #shopScreen { display: none; }
+        #orderList, #shopList {
             max-height: 70vh;
             overflow-y: auto;
             padding: 10px;
@@ -136,6 +136,7 @@
         <p>Business: お客の注文を満たし、お金を稼ぐ（壁のボードを確認、3分以内）</p>
         <p>Normal: エフェクトとサウンドあり</p>
         <p>Lite: エフェクトとサウンドなし（軽量）</p>
+        <p><b>ショップ:</b> "Shop"で稼いだお金を使い、キッチンをアップグレード</p>
         <button onclick="hideHelp()">Back</button>
     </div>
     <div id="orderScreen">
@@ -159,8 +160,22 @@
             <button onclick="orderIngredient('milk')">Milk</button>
             <button onclick="orderIngredient('sugar')">Sugar</button>
             <button onclick="orderIngredient('oil')">Oil</button>
+            <button onclick="orderIngredient('chicken')">Chicken</button>
+            <button onclick="orderIngredient('pepper')">Pepper</button>
+            <button onclick="orderIngredient('garlic')">Garlic</button>
+            <button onclick="orderIngredient('flour')">Flour</button>
+            <button onclick="orderIngredient('cream')">Cream</button>
         </div>
         <button onclick="hideOrder()">Close</button>
+    </div>
+    <div id="shopScreen">
+        <h1>Shop</h1>
+        <div id="shopList">
+            <button onclick="buyUpgrade('fasterCooking')">Faster Cooking (100円)</button>
+            <button onclick="buyUpgrade('extraPlate')">Extra Plate (150円)</button>
+            <button onclick="buyUpgrade('oven')">Oven (200円)</button>
+        </div>
+        <button onclick="hideShop()">Close</button>
     </div>
     <div id="businessScreen">
         <h1>Business Mode</h1>
@@ -173,6 +188,7 @@
         <button onclick="pickObject()">Pick</button>
         <button onclick="placeObject()">Place</button>
         <button onclick="showOrder()">Order</button>
+        <button onclick="showShop()">Shop</button>
         <button onclick="serveDish()">Serve</button>
     </div>
     <div id="joystick"><div id="joystickKnob"></div></div>
@@ -188,6 +204,8 @@
         let currentOrder = null;
         let orderTimer = null;
         let orderBoard = null;
+        let upgrades = { fasterCooking: false, extraPlate: false, oven: false };
+        let cookingSpeed = 1.5; // デフォルト調理時間（秒）
         const scene = new THREE.Scene();
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
@@ -265,13 +283,19 @@
             milk: { size: [0.5, 1, 0.5], name: "牛乳", color: 0xFFFFFF },
             sugar: { size: [0.4, 0.4, 0.4], name: "砂糖", color: 0xFFF8DC },
             oil: { size: [0.6, 0.8, 0.6], name: "油", color: 0xFFD700 },
+            chicken: { size: [1, 0.5, 0.8], name: "鶏肉", color: 0xFFDAB9 },
+            pepper: { size: [0.5, 0.5, 0.5], name: "ピーマン", color: 0x228B22 },
+            garlic: { size: [0.3, 0.3, 0.3], name: "ニンニク", color: 0xF5F5DC },
+            flour: { size: [0.6, 0.6, 0.6], name: "小麦粉", color: 0xFFF5EE },
+            cream: { size: [0.5, 0.7, 0.5], name: "クリーム", color: 0xFFFACD },
             knife: { size: [0.2, 0.1, 1], name: "包丁", color: 0xCCCCCC },
             pan: { size: [2, 0.2, 2], name: "フライパン", color: 0x666666 },
             stove: { size: [2, 0.5, 2], name: "コンロ", color: 0x333333 },
             microwave: { size: [1.5, 1, 1.5], name: "電子レンジ", color: 0xAAAAAA },
             sink: { size: [2, 0.5, 1], name: "シンク", color: 0xB0C4DE },
             counter: { size: [3, 0.5, 1.5], name: "調理台", color: 0x8B5A2B },
-            plate: { size: [1.5, 0.1, 1.5], name: "皿", color: 0xFFFFFF }
+            plate: { size: [1.5, 0.1, 1.5], name: "皿", color: 0xFFFFFF },
+            oven: { size: [2, 1.5, 2], name: "オーブン", color: 0x555555 }
         };
 
         function addObject(x, y, z, type, mass = 1) {
@@ -288,7 +312,12 @@
             body.position.set(x, y, z);
             world.addBody(body);
 
-            objects.push({ mesh, body, type, state: 'raw', name });
+            const obj = { mesh, body, type, state: 'raw', name };
+            if (type === 'oven' || type === 'pan' || type === 'stove' || type === 'microwave') {
+                obj.cookingTime = 0; // 調理時間トラッキング用
+            }
+            objects.push(obj);
+            return obj;
         }
 
         function sliceObject(obj) {
@@ -315,14 +344,14 @@
 
         function initScene() {
             addObject(2, 2, 0, 'knife');
-            addObject(-2, 0.5, 0, 'pan', 0);
-            addObject(-4, 0.5, 2, 'stove', 0);
-            addObject(0, 0.5, 4, 'microwave', 0);
+            const pan = addObject(-2, 0.5, 0, 'pan', 0);
+            const stove = addObject(-4, 0.5, 2, 'stove', 0);
+            const microwave = addObject(0, 0.5, 4, 'microwave', 0);
             addObject(4, 0.5, -2, 'sink', 0);
             addObject(0, 0.5, -4, 'counter', 0);
             addObject(-4, 0.5, -2, 'plate', 0);
 
-            // 注文ボード（営業モード用）
+            // 注文ボード
             const boardGeo = new THREE.PlaneGeometry(4, 2);
             const boardCanvas = document.createElement('canvas');
             boardCanvas.width = 512;
@@ -336,6 +365,10 @@
             orderBoard.position.set(0, 7, -9);
             orderBoard.rotation.x = -Math.PI / 6;
             scene.add(orderBoard);
+
+            // アップグレード適用
+            if (upgrades.oven) addObject(2, 0.75, 2, 'oven', 0);
+            if (upgrades.extraPlate) addObject(-2, 0.5, -2, 'plate', 0);
         }
 
         // パーティクルエフェクト
@@ -364,7 +397,8 @@
             cut: new Audio('https://www.soundjay.com/buttons/sounds/button-1.mp3'),
             cook: new Audio('https://www.soundjay.com/mechanical/sounds/frying-pan-1.mp3'),
             wash: new Audio('https://www.soundjay.com/nature/sounds/water-splash-1.mp3'),
-            ambient: new Audio('https://www.soundjay.com/ambient/sounds/kitchen-ambience-1.mp3')
+            ambient: new Audio('https://www.soundjay.com/ambient/sounds/kitchen-ambience-1.mp3'),
+            oven: new Audio('https://www.soundjay.com/mechanical/sounds/oven-timer-1.mp3')
         };
         sounds.ambient.loop = true;
         function playSound(type) {
@@ -440,6 +474,21 @@
             hideOrder();
         }
 
+        function buyUpgrade(upgrade) {
+            const costs = { fasterCooking: 100, extraPlate: 150, oven: 200 };
+            if (money >= costs[upgrade] && !upgrades[upgrade]) {
+                money -= costs[upgrade];
+                upgrades[upgrade] = true;
+                if (upgrade === 'fasterCooking') cookingSpeed = 1; // 調理速度アップ
+                if (upgrade === 'extraPlate') addObject(-2, 0.5, -2, 'plate', 0);
+                if (upgrade === 'oven') addObject(2, 0.75, 2, 'oven', 0);
+                alert(`${upgrade}を購入しました！`);
+                updateInfo();
+            } else {
+                alert("お金が足りないか、すでに購入済みです。");
+            }
+        }
+
         const recipes = {
             "Fried Rice": { ingredients: ["rice_cooked", "egg_cooked", "salt"], instructions: "米と卵を焼いて、塩を加える" },
             "Spaghetti": { ingredients: ["pasta_cooked", "tomato_cooked", "salt"], instructions: "パスタとトマトを焼いて、塩を加える" },
@@ -449,6 +498,11 @@
             "Omelette": { ingredients: ["egg_cooked", "salt"], instructions: "卵を焼いて、塩を加える" },
             "Tofu Soup": { ingredients: ["tofu_washed", "salt"], instructions: "豆腐を洗って、塩を加える" },
             "Carrot Cake": { ingredients: ["carrot_cooked", "sugar", "egg"], instructions: "ニンジンを焼いて、砂糖と卵を加える" },
+            "Chicken Curry": { ingredients: ["chicken_cooked", "onion_cooked", "carrot_cooked", "potato_cooked", "salt"], instructions: "鶏肉、玉ねぎ、ニンジン、ジャガイモを焼いて、塩を加える" },
+            "Pepper Steak": { ingredients: ["meat_cooked", "pepper_cooked", "salt"], instructions: "肉とピーマンを焼いて、塩を加える" },
+            "Garlic Bread": { ingredients: ["bread", "garlic", "butter"], instructions: "パンにニンニクとバターを加える" },
+            "Creamy Pasta": { ingredients: ["pasta_cooked", "cream", "cheese"], instructions: "パスタを焼いて、クリームとチーズを加える" },
+            "Fish Soup": { ingredients: ["fish_cooked", "milk", "salt"], instructions: "魚を焼いて、牛乳と塩を加える" },
             "Detergent Disaster": { ingredients: ["detergent"], instructions: "洗剤をそのまま皿に盛る" }
         };
 
@@ -528,7 +582,7 @@
         function checkCooking() {
             if (heldObject && heldObject.type === 'knife') {
                 objects.forEach(obj => {
-                    if (['carrot', 'tomato', 'meat', 'potato', 'onion', 'fish', 'egg'].includes(obj.type) &&
+                    if (['carrot', 'tomato', 'meat', 'potato', 'onion', 'fish', 'egg', 'chicken', 'pepper'].includes(obj.type) &&
                         obj.body.position.distanceTo(heldObject.body.position) < 1.5 && obj.state === 'raw') {
                         sliceObject(obj);
                     }
@@ -539,33 +593,46 @@
                 const pan = objects.find(o => o.type === 'pan');
                 const stove = objects.find(o => o.type === 'stove');
                 const microwave = objects.find(o => o.type === 'microwave');
+                const oven = objects.find(o => o.type === 'oven');
                 const sink = objects.find(o => o.type === 'sink');
                 const counter = objects.find(o => o.type === 'counter');
                 const plate = objects.find(o => o.type === 'plate');
 
-                if ((pan || stove) && ['cut', 'raw'].includes(obj.state) && 
-                    (obj.body.position.distanceTo(pan?.body.position || stove.body.position) < 1.5)) {
-                    obj.mesh.material.color.set(0x8B4513);
-                    obj.state = 'cooked';
-                    if (isNormalMode) {
-                        addParticleEffect(obj.body.position, 0xFFA500, 10);
-                        playSound('cook');
+                if ((pan || stove || oven) && ['cut', 'raw'].includes(obj.state) && 
+                    (obj.body.position.distanceTo(pan?.body.position || stove?.body.position || oven?.body.position) < 1.5)) {
+                    obj.cookingTime = (obj.cookingTime || 0) + (1 / 60);
+                    if (obj.cookingTime >= cookingSpeed) {
+                        obj.mesh.material.color.set(0x8B4513);
+                        obj.state = 'cooked';
+                        obj.cookingTime = 0;
+                        if (isNormalMode) {
+                            addParticleEffect(obj.body.position, 0xFFA500, 10);
+                            playSound(oven && obj.body.position.distanceTo(oven.body.position) < 1.5 ? 'oven' : 'cook');
+                        }
                     }
                 }
                 if (microwave && ['cut', 'raw'].includes(obj.state) && 
                     obj.body.position.distanceTo(microwave.body.position) < 1.5) {
-                    obj.mesh.material.color.set(0xCD853F);
-                    obj.state = 'cooked';
-                    if (isNormalMode) {
-                        addParticleEffect(obj.body.position, 0xFFFF00, 5);
+                    obj.cookingTime = (obj.cookingTime || 0) + (1 / 60);
+                    if (obj.cookingTime >= cookingSpeed) {
+                        obj.mesh.material.color.set(0xCD853F);
+                        obj.state = 'cooked';
+                        obj.cookingTime = 0;
+                        if (isNormalMode) {
+                            addParticleEffect(obj.body.position, 0xFFFF00, 5);
+                        }
                     }
                 }
                 if (sink && obj.body.position.distanceTo(sink.body.position) < 1.5) {
-                    obj.mesh.material.color.set(0xADD8E6);
-                    obj.state = 'washed';
-                    if (isNormalMode) {
-                        addParticleEffect(obj.body.position, 0x00FFFF, 15);
-                        playSound('wash');
+                    obj.cookingTime = (obj.cookingTime || 0) + (1 / 60);
+                    if (obj.cookingTime >= cookingSpeed) {
+                        obj.mesh.material.color.set(0xADD8E6);
+                        obj.state = 'washed';
+                        obj.cookingTime = 0;
+                        if (isNormalMode) {
+                            addParticleEffect(obj.body.position, 0x00FFFF, 15);
+                            playSound('wash');
+                        }
                     }
                 }
                 if (plate && obj.body.position.distanceTo(plate.body.position) < 1.5 && 
@@ -722,6 +789,14 @@
 
         function hideOrder() {
             document.getElementById('orderScreen').style.display = 'none';
+        }
+
+        function showShop() {
+            document.getElementById('shopScreen').style.display = 'flex';
+        }
+
+        function hideShop() {
+            document.getElementById('shopScreen').style.display = 'none';
         }
 
         window.addEventListener('resize', () => {
